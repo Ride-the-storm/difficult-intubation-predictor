@@ -1,1 +1,87 @@
+{% extends "base.html" %}
 
+{% block content %}
+<div class="dashboard">
+    <div class="dashboard-header">
+        <h1>Welcome, {{ current_user.username }}!</h1>
+        <p>Medical Intubation Prediction Dashboard</p>
+    </div>
+
+    <div class="dashboard-grid">
+        <div class="card model-info">
+            <h3>Model Information</h3>
+            <div class="info-item">
+                <label>Status:</label>
+                <span class="status {% if model_info.is_trained %}trained{% else %}not-trained{% endif %}">
+                    {{ 'Trained' if model_info.is_trained else 'Not Trained' }}
+                </span>
+            </div>
+            <div class="info-item">
+                <label>Version:</label>
+                <span>v{{ model_info.model_version }}</span>
+            </div>
+            <div class="info-item">
+                <label>Training Data:</label>
+                <span>{{ model_info.verified_data_points }} verified points</span>
+            </div>
+            {% if model_info.performance %}
+            <div class="info-item">
+                <label>Accuracy:</label>
+                <span>{{ "%.1f"|format(model_info.performance.accuracy * 100) }}%</span>
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="card user-stats">
+            <h3>Your Contributions</h3>
+            <div class="stat">
+                <div class="stat-value">{{ user_data_count }}</div>
+                <div class="stat-label">Data Points Submitted</div>
+            </div>
+            <a href="{{ url_for('input_data') }}" class="btn btn-primary">Add New Data</a>
+        </div>
+    </div>
+
+    <div class="quick-actions">
+        <a href="{{ url_for('predict') }}" class="action-card">
+            <h3>🔮 Make Prediction</h3>
+            <p>Predict difficult intubation for a patient</p>
+        </a>
+        <a href="{{ url_for('input_data') }}" class="action-card">
+            <h3>📊 Input Data</h3>
+            <p>Contribute to the training dataset</p>
+        </a>
+    </div>
+
+    {% if current_user.is_admin %}
+    <div class="admin-section">
+        <h3>Admin Controls</h3>
+        <button id="retrain-btn" class="btn btn-warning">Retrain Model</button>
+        <div id="retrain-result" style="display: none; margin-top: 10px;"></div>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+{% if current_user.is_admin %}
+document.getElementById('retrain-btn').addEventListener('click', async function() {
+    const btn = this;
+    btn.disabled = true;
+    btn.textContent = 'Retraining...';
+    
+    const response = await fetch('/retrain-model', { method: 'POST' });
+    const data = await response.json();
+    
+    const resultDiv = document.getElementById('retrain-result');
+    if (data.success) {
+        resultDiv.innerHTML = `<div class="success">Model retrained successfully! Accuracy: ${(data.performance.accuracy * 100).toFixed(1)}%</div>`;
+    } else {
+        resultDiv.innerHTML = `<div class="error">Error: ${data.error}</div>`;
+    }
+    resultDiv.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = 'Retrain Model';
+});
+{% endif %}
+</script>
+{% endblock %}
