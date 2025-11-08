@@ -1,12 +1,3 @@
-# Auto-create tables on startup
-with app.app_context():
-    try:
-        db.create_all()
-        print("Database tables created successfully")
-    except Exception as e:
-        print(f"Error creating tables: {e}")
-
-
 import os
 from flask import Flask, render_template, request, jsonify, flash, redirect, url_for
 from flask_login import LoginManager, current_user, login_required
@@ -322,3 +313,12 @@ def create_admin():
             return "✅ Admin user already exists"
     except Exception as e:
         return f"❌ Error creating admin: {str(e)}"
+
+# Auto-create tables on startup
+with app.app_context():
+    try:
+        db.create_all()
+        print("Database tables created successfully")
+    except Exception as e:
+        print(f"Error creating tables: {e}")
+
