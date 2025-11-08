@@ -275,3 +275,76 @@ if __name__ == '__main__':
     init_db()
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
+
+@app.route('/train-now')
+def train_now():
+    try:
+        from database import IntubationData
+        
+        # Check data stats
+        total_data = IntubationData.query.count()
+        verified_data = IntubationData.query.filter_by(verified=True).count()
+        
+        # Force train the model
+        result = model.train(force_retrain=True)
+        
+        if result:
+            return f"""
+            ✅ Model trained successfully!<br>
+            <b>Accuracy:</b> {result.get('accuracy', 'N/A')}<br>
+            <b>Training Data:</b> {result.get('training_size', 0)} points<br>
+            <b>Total Data:</b> {total_data}<br>
+            <b>Verified Data:</b> {verified_data}<br>
+            <a href="/predict">Test Prediction Now</a>
+            """
+        else:
+            return f"""
+            ❌ Training failed<br>
+            <b>Possible reasons:</b><br>
+            - Not enough verified data (need 20+, have {verified_data})<br>
+            - Data imbalance<br>
+            - Technical issue<br>
+            <a href="/debug-data">Check Data</a>
+            """
+    except Exception as e:
+        return f"Training error: {str(e)}"
+
+@app.route('/debug-data')
+def debug_data():
+    from database import IntubationData
+    import pandas as pd
+    
+    # Get all verified data
+    data = IntubationData.query.filter_by(verified=True).all()
+    
+    if not data:
+        return "No verified data found!"
+    
+    # Convert to DataFrame for analysis
+    records = []
+    for record in data:
+        records.append({
+            'age': record.age,
+            'gender': record.gender,
+            'bmi': record.bmi,
+            'mallampati': record.mallampati,
+            'neck_circumference': record.neck_circumference,
+            'thyromental_distance': record.thyromental_distance,
+            'interincisor_distance': record.interincisor_distance,
+            'stop_bang_score': record.stop_bang_score,
+            'cormack_grade': record.cormack_grade,
+            'difficult_intubation': record.difficult_intubation
+        })
+    
+    df = pd.DataFrame(records)
+    
+    # Basic stats
+    stats = f"""
+    <h3>Data Analysis</h3>
+    <b>Total Verified Records:</b> {len(data)}<br>
+    <b>Easy Intubations:</b> {sum(1 for r in data if not r.difficult_intubation)}<br>
+    <b>Difficult Intubations:</b> {sum(1 for r in data if r.difficult_intubation)}<br>
+    <b>Data Balance:</b> {'✅ Good' if (sum(1 for r in data if r.difficult_intubation) >= 5) else '❌ Need more difficult cases'}<br>
+    """
+    
+    return stats
