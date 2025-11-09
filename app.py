@@ -178,18 +178,23 @@ def predict():
                 'neck_mobility': neck_mobility
             }
             
+            print(f"Making prediction with features: {features}")  # Debug log
+            
             # Make prediction
             prediction_result = model.predict(features)
+            
+            print(f"Prediction result: {prediction_result}")  # Debug log
             
             return render_template('predict_result.html', 
                                 prediction=prediction_result,
                                 features=request.form)
             
         except Exception as e:
+            print(f"Prediction error: {str(e)}")  # Debug log
             flash(f'Error making prediction: {str(e)}', 'error')
+            return render_template('predict.html')
     
     return render_template('predict.html')
-
 @app.route('/model-info')
 @login_required
 def model_info():
