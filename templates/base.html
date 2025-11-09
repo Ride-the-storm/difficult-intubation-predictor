@@ -20,10 +20,10 @@
                     {% if current_user.is_admin %}
                         <a href="/admin" class="admin-link">Admin</a>
                     {% endif %}
-                    <a href="{{ url_for('auth.logout') }}">Logout ({{ current_user.username }})</a>
+                    <a href="{{ url_for('logout') }}">Logout ({{ current_user.username }})</a>
                 {% else %}
-                    <a href="{{ url_for('auth.login') }}">Login</a>
-                    <a href="{{ url_for('auth.register') }}">Register</a>
+                    <a href="{{ url_for('login') }}">Login</a>
+                    <a href="{{ url_for('register') }}">Register</a>
                 {% endif %}
             </div>
         </div>
