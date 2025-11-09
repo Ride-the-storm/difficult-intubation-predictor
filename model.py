@@ -217,34 +217,59 @@ class DifficultIntubationModel:
         return self.model_performance
     
     def predict(self, features_dict):
-        """Make prediction for difficult intubation"""
-        if not self.is_trained:
-            self.load_model()
-        
-        if not self.is_trained:
-            raise Exception("Model not trained and no saved model found.")
-        
-        # Convert features to array in correct order
-        feature_columns = [
-            'age', 'gender', 'weight', 'height', 'bmi', 'mallampati', 
-            'neck_circumference', 'thyromental_distance', 'interincisor_distance',
-            'al_ganzuri_score', 'stop_bang_score', 'mouth_opening',
-            'upper_lip_bite_test', 'neck_mobility'
-        ]
-        
-        features_array = np.array([features_dict[col] for col in feature_columns]).reshape(1, -1)
+    """Make prediction for difficult intubation"""
+    if not self.is_trained:
+        self.load_model()
+    
+    if not self.is_trained:
+        raise Exception("Model not trained and no saved model found.")
+    
+    # Convert features to array in correct order
+    feature_columns = [
+        'age', 'gender', 'weight', 'height', 'bmi', 'mallampati', 
+        'neck_circumference', 'thyromental_distance', 'interincisor_distance',
+        'al_ganzuri_score', 'stop_bang_score', 'mouth_opening',
+        'upper_lip_bite_test', 'neck_mobility'
+    ]
+    
+    # Ensure all features are present and in correct order
+    features_array = []
+    for col in feature_columns:
+        if col in features_dict:
+            features_array.append(features_dict[col])
+        else:
+            # Provide default value if feature is missing
+            if col == 'mouth_opening':
+                features_array.append(4.0)  # Default mouth opening
+            else:
+                features_array.append(0)  # Default for other features
+    
+    features_array = np.array(features_array).reshape(1, -1)
+    
+    try:
         features_scaled = self.scaler.transform(features_array)
         
         # Get prediction and probability
         prediction = self.model.predict(features_scaled)[0]
         probability = self.model.predict_proba(features_scaled)[0]
         
+        # Determine risk level
+        prob_difficult = float(probability[1])
+        if prob_difficult > 0.7:
+            risk_level = 'High'
+        elif prob_difficult > 0.3:
+            risk_level = 'Medium'
+        else:
+            risk_level = 'Low'
+        
         return {
             'prediction': bool(prediction),
-            'probability': float(probability[1]),  # Probability of difficult intubation
-            'risk_level': 'High' if probability[1] > 0.7 else 'Medium' if probability[1] > 0.3 else 'Low'
+            'probability': prob_difficult,
+            'risk_level': risk_level
         }
     
+    except Exception as e:
+        raise Exception(f"Prediction error: {str(e)}")    
     def save_model(self):
         """Save model and scaler to disk"""
         model_data = {
