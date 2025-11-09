@@ -6,14 +6,11 @@ from model import DifficultIntubationModel
 from auth import auth_bp
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key')
 
 # Database configuration
-database_url = os.environ.get('DATABASE_URL')
-if database_url:
-    if database_url.startswith("postgres://"):
-        database_url = database_url.replace("postgres://", "postgresql://", 1)
-    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+if os.environ.get('DATABASE_URL'):
+    app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL').replace("postgres://", "postgresql://", 1)
 else:
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///app.db'
 
@@ -21,6 +18,33 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Initialize extensions
 db.init_app(app)
+
+
+# After this line in app.py:
+
+# ADD THIS:
+with app.app_context():
+    try:
+        db.create_all()
+        print("✅ Database tables created successfully!")
+        
+        # Create admin user if doesn't exist
+        from database import User
+        if not User.query.filter_by(username='admin').first():
+            admin = User(
+                username='admin', 
+                email='admin@example.com', 
+                is_admin=True, 
+                is_medical_professional=True
+            )
+            admin.set_password('admin123')
+            db.session.add(admin)
+            db.session.commit()
+            print("✅ Admin user created")
+            
+    except Exception as e:
+        print(f"❌ Database initialization error: {e}")
+        
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'auth.login'
@@ -73,7 +97,7 @@ def input_data():
             # Calculate BMI
             bmi = weight / ((height / 100) ** 2)
             
-            # Determine difficult intubation
+            # Determine difficult intubation (Cormack 3-4 considered difficult)
             difficult_intubation = cormack_grade >= 3
             
             # Create new data point
@@ -95,13 +119,17 @@ def input_data():
                 cormack_grade=cormack_grade,
                 difficult_intubation=difficult_intubation,
                 user_id=current_user.id,
-                verified=current_user.is_medical_professional
+                verified=current_user.is_medical_professional  # Auto-verify if medical professional
             )
             
             db.session.add(new_data)
             db.session.commit()
             
-            flash('Data submitted successfully!', 'success')
+            # Check if retraining is needed
+            if model.check_retrain_needed():
+                flash('New training data available! Model will be retrained.', 'info')
+            
+            flash('Data submitted successfully! Thank you for your contribution.', 'success')
             return redirect(url_for('dashboard'))
             
         except Exception as e:
@@ -132,7 +160,7 @@ def predict():
             # Calculate BMI
             bmi = weight / ((height / 100) ** 2)
             
-            # Prepare features
+            # Prepare features dictionary
             features = {
                 'age': age,
                 'gender': gender,
@@ -150,62 +178,80 @@ def predict():
                 'neck_mobility': neck_mobility
             }
             
+            print(f"Making prediction with features: {features}")  # Debug log
+            
             # Make prediction
             prediction_result = model.predict(features)
+            
+            print(f"Prediction result: {prediction_result}")  # Debug log
             
             return render_template('predict_result.html', 
                                 prediction=prediction_result,
                                 features=request.form)
             
         except Exception as e:
+            print(f"Prediction error: {str(e)}")  # Debug log
             flash(f'Error making prediction: {str(e)}', 'error')
             return render_template('predict.html')
     
     return render_template('predict.html')
-
-# SIMPLE DEBUG ROUTES
-@app.route('/debug-model')
+@app.route('/model-info')
 @login_required
-def debug_model():
-    if not current_user.is_admin:
-        return "Admin access required"
-    
-    model_info = model.get_model_info()
-    from database import IntubationData
-    total = IntubationData.query.count()
-    verified = IntubationData.query.filter_by(verified=True).count()
-    
-    return f"""
-    Model Trained: {model_info['is_trained']}<br>
-    Model Version: v{model_info['model_version']}<br>
-    Total Data: {total}<br>
-    Verified Data: {verified}<br>
-    <a href="/train-now">TRAIN MODEL</a>
-    """
+def model_info():
+    info = model.get_model_info()
+    return jsonify(info)
 
-@app.route('/train-now')
+@app.route('/user-data')
 @login_required
-def train_now():
-    if not current_user.is_admin:
-        return "Admin access required"
-    
-    result = model.train(force_retrain=True)
-    if result:
-        return f"Model trained! Accuracy: {result.get('accuracy', 'N/A')}"
-    else:
-        return "Training failed - check Heroku logs"
+def user_data():
+    user_data_points = IntubationData.query.filter_by(user_id=current_user.id).all()
+    return jsonify([dp.to_dict() for dp in user_data_points])
 
-@app.route('/fix-data')
+@app.route('/retrain-model', methods=['POST'])
 @login_required
-def fix_data():
+def retrain_model():
     if not current_user.is_admin:
-        return "Admin access required"
+        return jsonify({'error': 'Admin access required'}), 403
     
-    from database import IntubationData, db
-    # Verify all data
-    IntubationData.query.update({'verified': True})
+    try:
+        performance = model.train(force_retrain=True)
+        if performance:
+            return jsonify({
+                'success': True,
+                'performance': performance
+            })
+        else:
+            return jsonify({'error': 'Training failed or not needed'})
+    
+    except Exception as e:
+        return jsonify({'error': str(e)})
+
+# Admin routes
+@app.route('/admin/pending-data')
+@login_required
+def pending_data():
+    if not current_user.is_admin:
+        flash('Admin access required', 'error')
+        return redirect(url_for('dashboard'))
+    
+    pending_data = IntubationData.query.filter_by(verified=False).all()
+    return jsonify([dp.to_dict() for dp in pending_data])
+
+@app.route('/admin/verify-data/<int:data_id>', methods=['POST'])
+@login_required
+def verify_data(data_id):
+    if not current_user.is_admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    data_point = IntubationData.query.get_or_404(data_id)
+    data_point.verified = True
     db.session.commit()
-    return "All data verified! <a href='/train-now'>Train Model</a>"
+    
+    # Check if retraining is needed
+    if model.check_retrain_needed():
+        model.train()
+    
+    return jsonify({'success': True})
 
 def init_db():
     with app.app_context():
@@ -224,15 +270,136 @@ def init_db():
             db.session.commit()
             print("Admin user created: admin/admin123")
         
-        # Initialize model
+        # Load or train initial model
         model.load_model()
         if not model.is_trained:
             print("Training initial model...")
             model.train(force_retrain=True)
 
-# Initialize when app starts
-init_db()
-
 if __name__ == '__main__':
+    init_db()
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
+
+@app.route('/train-now')
+def train_now():
+    try:
+        from database import IntubationData
+        
+        # Check data stats
+        total_data = IntubationData.query.count()
+        verified_data = IntubationData.query.filter_by(verified=True).count()
+        
+        # Force train the model
+        result = model.train(force_retrain=True)
+        
+        if result:
+            return f"""
+            ✅ Model trained successfully!<br>
+            <b>Accuracy:</b> {result.get('accuracy', 'N/A')}<br>
+            <b>Training Data:</b> {result.get('training_size', 0)} points<br>
+            <b>Total Data:</b> {total_data}<br>
+            <b>Verified Data:</b> {verified_data}<br>
+            <a href="/predict">Test Prediction Now</a>
+            """
+        else:
+            return f"""
+            ❌ Training failed<br>
+            <b>Possible reasons:</b><br>
+            - Not enough verified data (need 20+, have {verified_data})<br>
+            - Data imbalance<br>
+            - Technical issue<br>
+            <a href="/debug-data">Check Data</a>
+            """
+    except Exception as e:
+        return f"Training error: {str(e)}"
+
+@app.route('/debug-data')
+def debug_data():
+    from database import IntubationData
+    import pandas as pd
+    
+    # Get all verified data
+    data = IntubationData.query.filter_by(verified=True).all()
+    
+    if not data:
+        return "No verified data found!"
+    
+    # Convert to DataFrame for analysis
+    records = []
+    for record in data:
+        records.append({
+            'age': record.age,
+            'gender': record.gender,
+            'bmi': record.bmi,
+            'mallampati': record.mallampati,
+            'neck_circumference': record.neck_circumference,
+            'thyromental_distance': record.thyromental_distance,
+            'interincisor_distance': record.interincisor_distance,
+            'stop_bang_score': record.stop_bang_score,
+            'cormack_grade': record.cormack_grade,
+            'difficult_intubation': record.difficult_intubation
+        })
+    
+    df = pd.DataFrame(records)
+    
+    # Basic stats
+    stats = f"""
+    <h3>Data Analysis</h3>
+    <b>Total Verified Records:</b> {len(data)}<br>
+    <b>Easy Intubations:</b> {sum(1 for r in data if not r.difficult_intubation)}<br>
+    <b>Difficult Intubations:</b> {sum(1 for r in data if r.difficult_intubation)}<br>
+    <b>Data Balance:</b> {'✅ Good' if (sum(1 for r in data if r.difficult_intubation) >= 5) else '❌ Need more difficult cases'}<br>
+    """
+    
+    return stats
+@app.route('/force-train-debug')
+def force_train_debug():
+    try:
+        from database import IntubationData
+        
+        # Check data before training
+        total_data = IntubationData.query.count()
+        verified_data = IntubationData.query.filter_by(verified=True).count()
+        
+        # Check data balance
+        easy_cases = IntubationData.query.filter_by(verified=True, difficult_intubation=False).count()
+        difficult_cases = IntubationData.query.filter_by(verified=True, difficult_intubation=True).count()
+        
+        # Debug: Check model current state
+        current_state = f"""
+        <h3>Pre-Training Check</h3>
+        <b>Total Data:</b> {total_data}<br>
+        <b>Verified Data:</b> {verified_data}<br>
+        <b>Easy Cases:</b> {easy_cases}<br>
+        <b>Difficult Cases:</b> {difficult_cases}<br>
+        <b>Model Trained:</b> {model.is_trained}<br>
+        <b>Model Version:</b> {model.model_version}<br>
+        """
+        
+        # Force train
+        result = model.train(force_retrain=True)
+        
+        if result:
+            return current_state + f"""
+            <h3>✅ Training Successful!</h3>
+            <b>Accuracy:</b> {result.get('accuracy', 'N/A')}<br>
+            <b>Training Size:</b> {result.get('training_size', 'N/A')}<br>
+            <b>New Version:</b> v{model.model_version}<br>
+            <a href="/dashboard">Check Dashboard</a> | 
+            <a href="/test-prediction">Test Prediction</a>
+            """
+        else:
+            return current_state + f"""
+            <h3>❌ Training Failed</h3>
+            <p>Training returned None. Possible issues:</p>
+            <ul>
+                <li>Not enough verified data (have {verified_data})</li>
+                <li>Data imbalance (need both easy and difficult cases)</li>
+                <li>Training error (check logs)</li>
+            </ul>
+            <a href="/debug-data">Check Data Details</a>
+            """
+            
+    except Exception as e:
+        return f"Training error: {str(e)}"
