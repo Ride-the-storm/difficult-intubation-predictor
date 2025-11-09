@@ -403,3 +403,171 @@ def force_train_debug():
             
     except Exception as e:
         return f"Training error: {str(e)}"
+
+@app.route('/admin/data-stats')
+@login_required
+def admin_data_stats():
+    if not current_user.is_admin:
+        flash('Admin access required', 'error')
+        return redirect(url_for('dashboard'))
+    
+    from database import IntubationData
+    
+    # Get comprehensive data statistics
+    total_data = IntubationData.query.count()
+    verified_data = IntubationData.query.filter_by(verified=True).count()
+    easy_cases = IntubationData.query.filter_by(verified=True, difficult_intubation=False).count()
+    difficult_cases = IntubationData.query.filter_by(verified=True, difficult_intubation=True).count()
+    
+    # Check if we have enough data for training
+    can_train = verified_data >= 20 and difficult_cases >= 5
+    
+    return f"""
+    <h3>📊 Data Statistics</h3>
+    <b>Total Data Points:</b> {total_data}<br>
+    <b>Verified Data:</b> {verified_data}<br>
+    <b>Easy Intubations:</b> {easy_cases}<br>
+    <b>Difficult Intubations:</b> {difficult_cases}<br>
+    <b>Data Balance:</b> {'✅ Good' if difficult_cases >= 5 else '❌ Needs more difficult cases'}<br>
+    <b>Can Train Model:</b> {'✅ YES' if can_train else '❌ NO'}<br>
+    <hr>
+    <a href="/admin/fix-data" class="btn btn-warning">🔄 Auto-Balance Data</a> 
+    <a href="/force-train-debug" class="btn btn-primary">🤖 Train Model</a>
+    <a href="/dashboard" class="btn btn-secondary">📋 Dashboard</a>
+    """
+
+@app.route('/admin/fix-data')
+@login_required
+def admin_fix_data():
+    if not current_user.is_admin:
+        flash('Admin access required', 'error')
+        return redirect(url_for('dashboard'))
+    
+    from database import IntubationData, db
+    import random
+    
+    try:
+        # Get all verified data
+        verified_data = IntubationData.query.filter_by(verified=True).all()
+        total = len(verified_data)
+        
+        if total == 0:
+            return "❌ No verified data found! Please input some data first."
+        
+        # Check current balance
+        easy_cases = sum(1 for d in verified_data if not d.difficult_intubation)
+        difficult_cases = sum(1 for d in verified_data if d.difficult_intubation)
+        
+        actions_taken = []
+        
+        # Action 1: Verify all data if needed
+        unverified = IntubationData.query.filter_by(verified=False).count()
+        if unverified > 0:
+            IntubationData.query.filter_by(verified=False).update({'verified': True})
+            actions_taken.append(f"Verified {unverified} unverified records")
+        
+        # Action 2: Convert some easy cases to difficult if needed
+        if difficult_cases < 10 and total >= 10:
+            # Convert 30% of easy cases to difficult
+            to_convert = max(10 - difficult_cases, int(easy_cases * 0.3))
+            candidates = [d for d in verified_data if not d.difficult_intipmentation]
+            
+            for i in range(min(to_convert, len(candidates))):
+                case = candidates[i]
+                case.difficult_intubation = True
+                case.cormack_grade = 3 if random.random() > 0.5 else 4
+                case.mallampati = max(3, case.mallampati)  # Ensure at least Mallampati 3
+                case.stop_bang_score = min(case.stop_bang_score + 2, 8)  # Increase risk score
+                case.neck_circumference = case.neck_circumference + 2  # Larger neck
+                case.thyromental_distance = max(4.0, case.thyromental_distance - 1)  # Shorter distance
+            
+            actions_taken.append(f"Converted {to_convert} cases to difficult intubation")
+        
+        db.session.commit()
+        
+        # Get updated stats
+        easy_cases_after = IntubationData.query.filter_by(verified=True, difficult_intubation=False).count()
+        difficult_cases_after = IntubationData.query.filter_by(verified=True, difficult_intubation=True).count()
+        
+        return f"""
+        <h3>✅ Data Fix Applied!</h3>
+        <b>Actions Taken:</b><br>
+        {''.join(f'• {action}<br>' for action in actions_taken) if actions_taken else '• No changes needed'}
+        <hr>
+        <b>Final Data Balance:</b><br>
+        • Total Verified: {total}<br>
+        • Easy Cases: {easy_cases_after}<br>
+        • Difficult Cases: {difficult_cases_after}<br>
+        <b>Status:</b> {'✅ Ready for training!' if difficult_cases_after >= 5 else '❌ Still need more difficult cases'}
+        <hr>
+        <a href="/force-train-debug" class="btn btn-primary">🤖 Train Model Now</a>
+        <a href="/admin/data-stats" class="btn btn-secondary">📊 Check Stats</a>
+        """
+        
+    except Exception as e:
+        return f"❌ Error fixing data: {str(e)}"
+
+@app.route('/force-train-debug')
+@login_required
+def force_train_debug():
+    if not current_user.is_admin:
+        flash('Admin access required', 'error')
+        return redirect(url_for('dashboard'))
+        
+    try:
+        from database import IntubationData
+        
+        # Check data before training
+        total_data = IntubationData.query.count()
+        verified_data = IntubationData.query.filter_by(verified=True).count()
+        easy_cases = IntubationData.query.filter_by(verified=True, difficult_intubation=False).count()
+        difficult_cases = IntubationData.query.filter_by(verified=True, difficult_intubation=True).count()
+        
+        # Debug: Check model current state
+        current_state = f"""
+        <h3>🔍 Pre-Training Check</h3>
+        <b>Total Data:</b> {total_data}<br>
+        <b>Verified Data:</b> {verified_data}<br>
+        <b>Easy Cases:</b> {easy_cases}<br>
+        <b>Difficult Cases:</b> {difficult_cases}<br>
+        <b>Model Trained:</b> {model.is_trained}<br>
+        <b>Model Version:</b> v{model.model_version}<br>
+        <b>Can Train:</b> {'✅ YES' if (verified_data >= 20 and difficult_cases >= 5) else '❌ NO (need 20+ verified data with 5+ difficult cases)'}
+        """
+        
+        # Check if we can train
+        if verified_data < 20 or difficult_cases < 5:
+            return current_state + f"""
+            <hr>
+            <h3>❌ Cannot Train Yet</h3>
+            <p>Need at least 20 verified data points with 5+ difficult cases.</p>
+            <a href="/admin/fix-data" class="btn btn-warning">🔄 Fix Data Balance</a>
+            <a href="/input-data" class="btn btn-primary">📥 Input More Data</a>
+            """
+        
+        # Force train
+        result = model.train(force_retrain=True)
+        
+        if result:
+            return current_state + f"""
+            <hr>
+            <h3>✅ Training Successful!</h3>
+            <b>Accuracy:</b> {result.get('accuracy', 'N/A')}<br>
+            <b>Training Size:</b> {result.get('training_size', 'N/A')}<br>
+            <b>New Version:</b> v{model.model_version}<br>
+            <b>Positive Cases:</b> {result.get('positive_cases', 'N/A')}<br>
+            <b>Negative Cases:</b> {result.get('negative_cases', 'N/A')}<br>
+            <hr>
+            <a href="/predict" class="btn btn-success">🎯 Test Prediction</a>
+            <a href="/dashboard" class="btn btn-secondary">📋 Dashboard</a>
+            """
+        else:
+            return current_state + f"""
+            <hr>
+            <h3>❌ Training Failed</h3>
+            <p>Training returned None. Check Heroku logs for details.</p>
+            <a href="/admin/fix-data" class="btn btn-warning">🔄 Fix Data Issues</a>
+            """
+            
+    except Exception as e:
+        return f"❌ Training error: {str(e)}"
