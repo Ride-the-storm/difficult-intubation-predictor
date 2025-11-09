@@ -63,7 +63,7 @@ class DifficultIntubationModel:
         """Generate initial synthetic data based on medical literature"""
         print("Generating initial synthetic medical data...")
         np.random.seed(42)
-        n_samples = 200
+        n_samples = 20
         
         # Based on medical literature prevalence
         data = {
