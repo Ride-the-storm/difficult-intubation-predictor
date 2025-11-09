@@ -353,3 +353,53 @@ def debug_data():
     """
     
     return stats
+@app.route('/force-train-debug')
+def force_train_debug():
+    try:
+        from database import IntubationData
+        
+        # Check data before training
+        total_data = IntubationData.query.count()
+        verified_data = IntubationData.query.filter_by(verified=True).count()
+        
+        # Check data balance
+        easy_cases = IntubationData.query.filter_by(verified=True, difficult_intubation=False).count()
+        difficult_cases = IntubationData.query.filter_by(verified=True, difficult_intubation=True).count()
+        
+        # Debug: Check model current state
+        current_state = f"""
+        <h3>Pre-Training Check</h3>
+        <b>Total Data:</b> {total_data}<br>
+        <b>Verified Data:</b> {verified_data}<br>
+        <b>Easy Cases:</b> {easy_cases}<br>
+        <b>Difficult Cases:</b> {difficult_cases}<br>
+        <b>Model Trained:</b> {model.is_trained}<br>
+        <b>Model Version:</b> {model.model_version}<br>
+        """
+        
+        # Force train
+        result = model.train(force_retrain=True)
+        
+        if result:
+            return current_state + f"""
+            <h3>✅ Training Successful!</h3>
+            <b>Accuracy:</b> {result.get('accuracy', 'N/A')}<br>
+            <b>Training Size:</b> {result.get('training_size', 'N/A')}<br>
+            <b>New Version:</b> v{model.model_version}<br>
+            <a href="/dashboard">Check Dashboard</a> | 
+            <a href="/test-prediction">Test Prediction</a>
+            """
+        else:
+            return current_state + f"""
+            <h3>❌ Training Failed</h3>
+            <p>Training returned None. Possible issues:</p>
+            <ul>
+                <li>Not enough verified data (have {verified_data})</li>
+                <li>Data imbalance (need both easy and difficult cases)</li>
+                <li>Training error (check logs)</li>
+            </ul>
+            <a href="/debug-data">Check Data Details</a>
+            """
+            
+    except Exception as e:
+        return f"Training error: {str(e)}"
