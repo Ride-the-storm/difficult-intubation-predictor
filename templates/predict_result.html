@@ -4,10 +4,9 @@
 <div class="result-container">
     <h2>Prediction Result</h2>
     
-    {% if prediction %}
     <div class="prediction-card {% if prediction.prediction %}difficult{% else %}easy{% endif %}">
         <div class="prediction-header">
-            <h3>{{ 'Difficult Intubation Predicted' if prediction.prediction else 'Easy Intubation Predicted' }}</h3>
+            <h3>{{ '🟥 Difficult Intubation Predicted' if prediction.prediction else '🟩 Easy Intubation Predicted' }}</h3>
             <div class="probability-badge">{{ "%.1f"|format(prediction.probability * 100) }}% probability</div>
         </div>
         
@@ -52,12 +51,6 @@
             <div class="feature-item"><strong>Neck Mobility:</strong> {{ features.neck_mobility }}</div>
         </div>
     </div>
-    {% else %}
-    <div class="error-message">
-        <h3>No Prediction Available</h3>
-        <p>There was an issue generating the prediction. Please try again.</p>
-    </div>
-    {% endif %}
 
     <div class="action-buttons">
         <a href="{{ url_for('predict') }}" class="btn btn-primary">Make Another Prediction</a>
