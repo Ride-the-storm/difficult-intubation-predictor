@@ -14,15 +14,13 @@ class User(UserMixin, db.Model):
     is_admin = db.Column(db.Boolean, default=False)
     is_medical_professional = db.Column(db.Boolean, default=False)
     
-    # Relationship with intubation data
-    intubation_data = db.relationship('IntubationData', backref='contributor', lazy=True)
-    
     def set_password(self, password):
         self.password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
     
     def check_password(self, password):
         return bcrypt.checkpw(password.encode('utf-8'), self.password_hash.encode('utf-8'))
 
+# ... e la classe IntubationData
 class IntubationData(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     
