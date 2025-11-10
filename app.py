@@ -1,83 +1,86 @@
 import os
-from flask import Flask, render_template, request, redirect, url_for, flash
-from flask_sqlalchemy import SQLAlchemy
-from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
-from werkzeug.security import generate_password_hash, check_password_hash
+from flask import Flask, render_template, request, jsonify, flash, redirect, url_for
+from flask_login import LoginManager, current_user, login_required
+from database import db, User, IntubationData
+from model import DifficultIntubationModel
+from auth import auth_bp  # AGGIUNGI QUESTA RIGA
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-key-123')
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
-# Database setup
-database_url = os.environ.get('DATABASE_URL', 'sqlite:///app.db')
-if database_url.startswith('postgres://'):
-    database_url = database_url.replace('postgres://', 'postgresql://', 1)
-app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+# Database configuration
+database_url = os.environ.get('DATABASE_URL')
+if database_url:
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
+    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+else:
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///app.db'
+
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-db = SQLAlchemy(app)
-login_manager = LoginManager(app)
-login_manager.login_view = 'login'
+# Initialize extensions
+db.init_app(app)
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'auth.login'  # CAMBIA IN 'auth.login'
+login_manager.login_message = 'Please log in to access this page.'
 
-# Simple Models
-class User(UserMixin, db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
-    password_hash = db.Column(db.String(120), nullable=False)
-    is_admin = db.Column(db.Boolean, default=False)
-
-class IntubationData(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    age = db.Column(db.Integer)
-    gender = db.Column(db.String(10))
-    weight = db.Column(db.Float)
-    height = db.Column(db.Float)
-    bmi = db.Column(db.Float)
-    mallampati = db.Column(db.Integer)
-    neck_circumference = db.Column(db.Float)
-    thyromental_distance = db.Column(db.Float)
-    interincisor_distance = db.Column(db.Float)
-    stop_bang_score = db.Column(db.Integer)
-    cormack_grade = db.Column(db.Integer)
-    difficult_intubation = db.Column(db.Boolean)
-    user_id = db.Column(db.Integer)
-    verified = db.Column(db.Boolean, default=True)
+# Initialize model
+model = DifficultIntubationModel(retrain_threshold=5)
 
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-# Simple ML placeholder
-class SimpleModel:
-    def __init__(self):
-        self.is_trained = True  # Always return a prediction
-    
-    def predict(self, features):
-        # Simple rule-based prediction for now
-        risk_factors = 0
-        if features.get('mallampati', 1) >= 3:
-            risk_factors += 1
-        if features.get('neck_circumference', 0) > 40:
-            risk_factors += 1
-        if features.get('stop_bang_score', 0) >= 3:
-            risk_factors += 1
-            
-        probability = min(risk_factors * 0.3, 0.9)
-        prediction = risk_factors >= 2
-        
-        if probability > 0.7:
-            risk_level = 'High'
-        elif probability > 0.3:
-            risk_level = 'Medium'
-        else:
-            risk_level = 'Low'
-            
-        return {
-            'prediction': prediction,
-            'probability': probability,
-            'risk_level': risk_level
-        }
+# Register blueprints
+app.register_blueprint(auth_bp)  # AGGIUNGI QUESTA RIGA
 
-model = SimpleModel()
+# Le tue route esistenti rimangono uguali...
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/dashboard')
+@login_required
+def dashboard():
+    model_info = model.get_model_info()
+    user_data_count = IntubationData.query.filter_by(user_id=current_user.id).count()
+    return render_template('dashboard.html', 
+                         model_info=model_info, 
+                         user_data_count=user_data_count)
+
+# ... tutte le altre route rimangono uguali
+
+def init_db():
+    with app.app_context():
+        db.create_all()
+        
+        # Create admin user if not exists
+        if not User.query.filter_by(username='admin').first():
+            admin = User(
+                username='admin',
+                email='admin@example.com',
+                is_admin=True,
+                is_medical_professional=True
+            )
+            admin.set_password('admin123')
+            db.session.add(admin)
+            db.session.commit()
+            print("Admin user created: admin/admin123")
+        
+        # Initialize model
+        model.load_model()
+        if not model.is_trained:
+            print("Training initial model...")
+            model.train(force_retrain=True)
+
+# Initialize when app starts
+init_db()
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
 
 # Routes
 @app.route('/')
