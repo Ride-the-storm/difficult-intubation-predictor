@@ -1,17 +1,20 @@
-import os
 from flask import Flask, render_template, request, jsonify, flash, redirect, url_for
 from flask_login import LoginManager, current_user, login_required
-from flask_wtf import CSRFProtect
+from flask_wtf.csrf import CSRFProtect, generate_csrf   # ✅ AGGIUNGI QUESTO
 from database import db, User, IntubationData
 from model import DifficultIntubationModel
-from auth import auth_bp  # AGGIUNGI QUESTA RIGA
-import click
-from flask.cli import with_appcontext
+from auth import auth_bp
 
 app = Flask(__name__)
-CSRFProtect(app)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
+# ✅ ABILITA CSRF
+csrf = CSRFProtect(app)
+
+# ✅ CONTEXT PROCESSOR PER I TEMPLATE
+@app.context_processor
+def inject_csrf_token():
+    return dict(csrf_token=generate_csrf)
 # Database configuration
 database_url = os.environ.get('DATABASE_URL')
 
