@@ -6,6 +6,7 @@
     <p class="form-description">Enter patient airway assessment parameters to predict intubation difficulty</p>
     
     <form method="POST" action="{{ url_for('predict') }}">
+       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="form-section">
             <h3>Patient Demographics</h3>
             <div class="form-row">
