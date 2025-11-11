@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="hero">
+    <h1>Difficult Intubation Predictor</h1>
+    <p>A machine learning tool to predict difficult intubation based on established medical parameters</p>
+    
+    {% if not current_user.is_authenticated %}
+    <div class="cta-buttons">
+        <a href="{{ url_for('auth.register') }}" class="btn btn-primary">Get Started</a>
+        <a href="{{ url_for('auth.login') }}" class="btn btn-secondary">Login</a>
+    </div>
+    {% else %}
+    <div class="cta-buttons">
+        <a href="{{ url_for('predict') }}" class="btn btn-primary">Make Prediction</a>
+        <a href="{{ url_for('input_data') }}" class="btn btn-secondary">Input Data</a>
+    </div>
+    {% endif %}
+</div>
+
+<div class="features">
+    <div class="feature-card">
+        <h3>🩺 Medical Parameters</h3>
+        <p>Uses established predictors: Mallampati, STOP-BANG, neck circumference, thyromental distance, and more</p>
+    </div>
+    <div class="feature-card">
+        <h3>📊 Machine Learning</h3>
+        <p>Random Forest algorithm trained on airway assessment data</p>
+    </div>
+    <div class="feature-card">
+        <h3>🔄 Continuous Learning</h3>
+        <p>Model improves as more verified data is contributed</p>
+    </div>
+</div>
+
+<div class="medical-info">
+    <h3>Supported Parameters</h3>
+    <ul>
+        <li><strong>Mallampati Score</strong> (I-IV)</li>
+        <li><strong>STOP-BANG Score</strong> (0-8)</li>
+        <li><strong>Neck Circumference</strong></li>
+        <li><strong>Thyromental Distance (DTM)</strong></li>
+        <li><strong>Interincisor Distance (DII)</strong></li>
+        <li><strong>Al-Ganzuri Score</strong></li>
+        <li><strong>Upper Lip Bite Test</strong></li>
+        <li><strong>Age, BMI, Gender</strong></li>
+    </ul>
+</div>
+{% endblock %}

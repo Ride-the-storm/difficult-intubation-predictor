@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="result-container">
+    <h2>Prediction Result</h2>
+    
+    <div class="prediction-card {% if prediction.prediction %}difficult{% else %}easy{% endif %}">
+        <div class="prediction-header">
+            <h3>{{ '🟥 Difficult Intubation Predicted' if prediction.prediction else '🟩 Easy Intubation Predicted' }}</h3>
+            <div class="probability-badge">{{ "%.1f"|format(prediction.probability * 100) }}% probability</div>
+        </div>
+        
+        <div class="risk-level">
+            <strong>Risk Level:</strong> 
+            <span class="risk-{{ prediction.risk_level.lower() }}">{{ prediction.risk_level }}</span>
+        </div>
+        
+        <div class="recommendations">
+            <h4>Recommendations:</h4>
+            {% if prediction.prediction %}
+            <ul>
+                <li>Prepare advanced airway equipment</li>
+                <li>Consider video laryngoscopy</li>
+                <li>Have senior anesthesiologist present</li>
+                <li>Prepare for potential surgical airway</li>
+            </ul>
+            {% else %}
+            <ul>
+                <li>Standard intubation equipment sufficient</li>
+                <li>Proceed with routine protocol</li>
+            </ul>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="features-summary">
+        <h3>Input Parameters</h3>
+        <div class="features-grid">
+            <div class="feature-item"><strong>Age:</strong> {{ features.age }} years</div>
+            <div class="feature-item"><strong>Gender:</strong> {{ features.gender }}</div>
+            <div class="feature-item"><strong>Weight:</strong> {{ features.weight }} kg</div>
+            <div class="feature-item"><strong>Height:</strong> {{ features.height }} cm</div>
+            <div class="feature-item"><strong>Mallampati:</strong> {{ features.mallampati }}</div>
+            <div class="feature-item"><strong>Neck Circumference:</strong> {{ features.neck_circumference }} cm</div>
+            <div class="feature-item"><strong>Thyromental Distance:</strong> {{ features.thyromental_distance }} cm</div>
+            <div class="feature-item"><strong>Interincisor Distance:</strong> {{ features.interincisor_distance }} cm</div>
+            <div class="feature-item"><strong>Al-Ganzuri Score:</strong> {{ features.al_ganzuri_score }}</div>
+            <div class="feature-item"><strong>STOP-BANG Score:</strong> {{ features.stop_bang_score }}</div>
+            <div class="feature-item"><strong>Mouth Opening:</strong> {{ features.mouth_opening }} cm</div>
+            <div class="feature-item"><strong>Upper Lip Bite Test:</strong> {{ features.upper_lip_bite_test }}</div>
+            <div class="feature-item"><strong>Neck Mobility:</strong> {{ features.neck_mobility }}</div>
+        </div>
+    </div>
+
+    <div class="action-buttons">
+        <a href="{{ url_for('predict') }}" class="btn btn-primary">Make Another Prediction</a>
+        <a href="{{ url_for('input_data') }}" class="btn btn-secondary">Input This Case</a>
+        <a href="{{ url_for('dashboard') }}" class="btn btn-outline">Dashboard</a>
+    </div>
+</div>
+{% endblock %}

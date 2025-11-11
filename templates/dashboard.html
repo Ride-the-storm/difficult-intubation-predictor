@@ -1,0 +1,166 @@
+
+{% extends "base.html" %}
+{% block content %}
+<div class="container" style="max-width:1100px;margin:0 auto;">
+  <h1 style="margin-top:1rem;">Dashboard</h1>
+  <div id="cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:1rem 0;">
+    <div class="card" style="padding:16px;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.08);">
+      <div style="font-size:14px;opacity:.7;">Your data</div>
+      <div id="count" style="font-size:28px;font-weight:700;">–</div>
+    </div>
+    <div class="card" style="padding:16px;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.08);">
+      <div style="font-size:14px;opacity:.7;">Prevalence</div>
+      <div id="prevalence" style="font-size:28px;font-weight:700;">–</div>
+    </div>
+    <div class="card" style="padding:16px;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.08);">
+      <div style="font-size:14px;opacity:.7;">Sensitivity (latest)</div>
+      <div id="sensitivity_latest" style="font-size:28px;font-weight:700;">–</div>
+    </div>
+    <div class="card" style="padding:16px;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.08);">
+      <div style="font-size:14px;opacity:.7;">Specificity (latest)</div>
+      <div id="specificity_latest" style="font-size:28px;font-weight:700;">–</div>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr;gap:16px;">
+    <div style="padding:16px;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.08);">
+      <h3 style="margin-top:0;">Sensitivity over time</h3>
+      <canvas id="sensChart" height="140"></canvas>
+    </div>
+
+    <div style="padding:16px;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.08);">
+      <h3 style="margin-top:0;">Correlation heatmap</h3>
+      <canvas id="corrHeat" height="420"></canvas>
+      <div style="font-size:12px;opacity:.7;margin-top:6px;">Computed from up to 500 recent rows, numeric columns only.</div>
+    </div>
+
+    <div style="padding:16px;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.08);overflow:auto;">
+      <h3 style="margin-top:0;">Basic stats</h3>
+      <table id="statsTable" style="width:100%;border-collapse:collapse;font-size:14px;">
+        <thead>
+          <tr><th style="text-align:left;border-bottom:1px solid #ddd;padding:6px;">Feature</th>
+              <th style="text-align:right;border-bottom:1px solid #ddd;padding:6px;">Count</th>
+              <th style="text-align:right;border-bottom:1px solid #ddd;padding:6px;">Mean</th>
+              <th style="text-align:right;border-bottom:1px solid #ddd;padding:6px;">Std</th>
+              <th style="text-align:right;border-bottom:1px solid #ddd;padding:6px;">Min</th>
+              <th style="text-align:right;border-bottom:1px solid #ddd;padding:6px;">Max</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Chart.js CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" integrity="" crossorigin="anonymous"></script>
+<script>
+async function loadStats(){
+  const res = await fetch('/api/dashboard-stats');
+  const data = await res.json();
+
+  // Cards
+  document.getElementById('count').textContent = data.count ?? '–';
+  document.getElementById('prevalence').textContent = (data.prevalence!=null) ? (data.prevalence*100).toFixed(1)+'%' : '–';
+
+  let sensLatest = '–', specLatest = '–';
+  if (data.confusion){
+    const tp = data.confusion.tp, tn = data.confusion.tn, fp = data.confusion.fp, fn = data.confusion.fn;
+    const sens = (tp+fn) ? tp/(tp+fn) : null;
+    const spec = (tn+fp) ? tn/(tn+fp) : null;
+    sensLatest = (sens!=null) ? (sens*100).toFixed(1)+'%' : '–';
+    specLatest = (spec!=null) ? (spec*100).toFixed(1)+'%' : '–';
+  }
+  document.getElementById('sensitivity_latest').textContent = sensLatest;
+  document.getElementById('specificity_latest').textContent = specLatest;
+
+  // Sensitivity over time chart
+  const labels = (data.sensitivity_progress||[]).map(d=>d.period);
+  const values = (data.sensitivity_progress||[]).map(d=> d.sensitivity!=null ? (d.sensitivity*100) : null);
+  const ctx1 = document.getElementById('sensChart').getContext('2d');
+  new Chart(ctx1, {
+    type: 'line',
+    data: { labels, datasets: [{ label:'Sensitivity (%)', data: values, spanGaps:true }] },
+    options: { responsive: true, scales: { y: { suggestedMin:0, suggestedMax:100 } } }
+  });
+
+  // Correlation heatmap
+  const cols = data.numeric_columns || [];
+  const n = cols.length;
+  const corrMap = {}; // key x|y -> value
+  (data.correlation||[]).forEach(e => { corrMap[`${e.x}|${e.y}`] = e.value; });
+  const grid = [];
+  for (let i=0;i<n;i++){
+    const row=[];
+    for (let j=0;j<n;j++){
+      let v = corrMap[`${cols[i]}|${cols[j]}`];
+      if (v==null) v = 0;
+      row.push(v);
+    }
+    grid.push(row);
+  }
+  const heat = document.getElementById('corrHeat').getContext('2d');
+  // Draw simple heatmap using Chart.js matrix plugin-like drawing (manual)
+  // We'll render as a bubble chart with square points sized to fit grid.
+  const points = [];
+  const size = 20;
+  for (let i=0;i<n;i++){
+    for (let j=0;j<n;j++){
+      points.push({x:j, y:i, v:grid[i][j]});
+    }
+  }
+  new Chart(heat, {
+    type: 'bubble',
+    data: {
+      datasets: [{
+        label: 'Correlation',
+        data: points.map(p => ({x:p.x, y:p.y, r:10, v:p.v})),
+        parsing: false,
+      }]
+    },
+    options: {
+      scales: {
+        x: { type:'linear', min:-0.5, max:n-0.5, ticks:{ callback:(v)=> cols[v] ?? '' } },
+        y: { type:'linear', min:-0.5, max:n-0.5, reverse:true, ticks:{ callback:(v)=> cols[v] ?? '' } },
+      },
+      plugins: {
+        tooltip: { callbacks: { label: (ctx)=> `${cols[ctx.raw.y]} × ${cols[ctx.raw.x]}: ${(ctx.raw.v*100).toFixed(1)}%` } },
+        legend: { display:false }
+      },
+      elements: {
+        point: {
+          backgroundColor: (ctx)=> {
+            const val = ctx.raw.v || 0;
+            // map -1..1 to 0..255 blue-red without setting fixed colors explicitly (let Chart.js default)
+            // We'll just let defaults, as we shouldn't set specific colors per constraints outside python tool.
+            return;
+          }
+        }
+      }
+    }
+  });
+
+  // Stats table
+  const tbody = document.querySelector('#statsTable tbody');
+  tbody.innerHTML = '';
+  const stats = data.numeric_summary || {};
+  Object.keys(stats).forEach(k => {
+    const s = stats[k];
+    const tr = document.createElement('tr');
+    function td(txt, align='right'){
+      const e = document.createElement('td');
+      e.style.padding='6px'; e.style.borderBottom='1px solid #eee'; e.style.textAlign=align;
+      e.textContent = txt;
+      return e;
+    }
+    tr.appendChild(td(k, 'left'));
+    tr.appendChild(td(s.count));
+    tr.appendChild(td(s.mean!=null ? s.mean.toFixed(3) : '–'));
+    tr.appendChild(td(s.std!=null ? s.std.toFixed(3) : '–'));
+    tr.appendChild(td(s.min!=null ? s.min.toFixed(3) : '–'));
+    tr.appendChild(td(s.max!=null ? s.max.toFixed(3) : '–'));
+    tbody.appendChild(tr);
+  });
+}
+document.addEventListener('DOMContentLoaded', loadStats);
+</script>
+{% endblock %}
