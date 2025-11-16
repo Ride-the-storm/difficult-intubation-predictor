@@ -6,7 +6,7 @@ from model import DifficultIntubationModel
 from auth import auth_bp
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
+csrf = CSRFProtect(app)  # attiva il CSRF su tutte le view
 
 # ✅ ABILITA CSRF
 csrf = CSRFProtect(app)
